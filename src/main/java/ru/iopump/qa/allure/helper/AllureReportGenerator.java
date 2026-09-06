@@ -103,6 +103,10 @@ public final class AllureReportGenerator {
     }
 
     public Path generate(Path outputDirectory, List<Path> resultsDirectories, String reportUrl) {
+        return generate(outputDirectory, resultsDirectories, reportUrl, false);
+    }
+
+    public Path generate(Path outputDirectory, List<Path> resultsDirectories, String reportUrl, boolean singleFile) {
         var ctx = new PluginContext(reportUrl);
 
         var effectiveListeners = listeners.stream()
@@ -119,7 +123,11 @@ public final class AllureReportGenerator {
 
         final Collection<LaunchResults> launchesResults;
         synchronized (aggregatorGrabber) {
-            delegate.generate(outputDirectory, resultsDirectories);
+            if (singleFile) {
+                delegate.generateSingleFile(outputDirectory, resultsDirectories);
+            } else {
+                delegate.generate(outputDirectory, resultsDirectories);
+            }
             launchesResults = aggregatorGrabber.launchesResults();
         }
 

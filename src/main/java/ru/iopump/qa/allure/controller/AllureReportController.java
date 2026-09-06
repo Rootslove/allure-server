@@ -97,7 +97,8 @@ public class AllureReportController {
             reportGenerateRequest.getResultsAsPath(resultService.getStoragePath()),
             reportGenerateRequest.isDeleteResults(),
             reportGenerateRequest.getReportSpec().getExecutorInfo(),
-            baseUrl()
+            baseUrl(),
+            reportGenerateRequest.isSingleFile()
         );
 
         return new ReportResponse(

@@ -1,6 +1,7 @@
 package ru.iopump.qa.allure.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -34,6 +35,11 @@ public class ReportGenerateRequest {
      * Delete result after generation.
      */
     boolean deleteResults = true;
+
+    /** Generate a standalone index.html, equivalent to allure generate --single-file. */
+    @Schema(
+        description = "Embed report data and assets in a standalone index.html", defaultValue = "false")
+    boolean singleFile = false;
 
     @JsonIgnore
     public List<Path> getResultsAsPath(@NonNull Path baseResultDir) {

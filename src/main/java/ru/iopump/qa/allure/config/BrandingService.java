@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.regex.Matcher;
+import java.util.Base64;
 
 /**
  * Spring-owned, stateless collaborator that applies Brew.QA branding (favicon, sidebar logo, home
@@ -65,16 +66,36 @@ public final class BrandingService {
             return;
         }
 
+        String html = Files.readString(indexHtml, StandardCharsets.UTF_8);
+        if (html.contains("window.reportData =")) {
+            if (!html.contains("id=\"brew-brand-inline\"") && html.contains("</head>")) {
+                String icon = dataUrl("image/svg+xml", new ClassPathResource(CLASSPATH_ICON).getContentAsByteArray());
+                String script = new ClassPathResource(CLASSPATH_JS).getContentAsString(StandardCharsets.UTF_8)
+                    .replace("'favicon.svg'", "'" + icon + "'");
+                String injection = "<link id=\"brew-brand-inline\" rel=\"icon\" href=\"" + icon + "\">\n"
+                    + "<link rel=\"stylesheet\" href=\"" + dataUrl("text/css",
+                        new ClassPathResource(CLASSPATH_CSS).getContentAsByteArray()) + "\">\n"
+                    + "<script defer src=\"" + dataUrl("text/javascript", script.getBytes(StandardCharsets.UTF_8))
+                    + "\"></script>\n</head>";
+                Files.writeString(indexHtml, html.replaceFirst("(?i)</head>", Matcher.quoteReplacement(injection)),
+                    StandardCharsets.UTF_8);
+            }
+            return;
+        }
+
         copyResource(CLASSPATH_ICON, reportDirectory.resolve(FAVICON_SVG));
         copyResource(CLASSPATH_CSS, reportDirectory.resolve(MARKER_CSS));
         copyResource(CLASSPATH_JS, reportDirectory.resolve(BRAND_JS));
 
-        String html = Files.readString(indexHtml, StandardCharsets.UTF_8);
         if (!html.contains(MARKER_CSS) && html.contains("</head>")) {
             String patched = html.replaceFirst("(?i)</head>", Matcher.quoteReplacement(HEAD_INJECTION));
             Files.writeString(indexHtml, patched, StandardCharsets.UTF_8);
         }
         log.info("Brew.QA branding applied to {}", reportDirectory);
+    }
+
+    private static String dataUrl(String mimeType, byte[] bytes) {
+        return "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(bytes);
     }
 
     private static void copyResource(String classpathLocation, Path target) throws IOException {

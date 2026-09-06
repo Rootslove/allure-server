@@ -3,6 +3,8 @@ package ru.iopump.qa.allure.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
 import org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration;
@@ -24,16 +26,23 @@ import ru.iopump.qa.allure.service.ApiTokenService;
 import ru.iopump.qa.allure.service.JpaReportService;
 import ru.iopump.qa.allure.service.ResultService;
 
+import java.nio.file.Path;
+import java.util.List;
+import java.util.UUID;
 import java.util.Collections;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 /**
  * {@code @WebMvcTest} slice for {@link AllureReportController}. Security is excluded
@@ -48,6 +57,31 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(GlobalExceptionHandler.class)
 @EnableConfigurationProperties(AllureProperties.class)
 class AllureReportControllerTest {
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", ",\"singleFile\":false", ",\"singleFile\":true"})
+    void generateReport_passesRequestedFormat(String option) throws Exception {
+        boolean singleFile = option.contains("true");
+        var storage = Path.of("results");
+        var entity = ReportEntity.builder().uuid(UUID.fromString(EXISTING_UUID)).path("master/666").build();
+        when(resultService.getStoragePath()).thenReturn(storage);
+        when(reportService.generate(eq("master/666"),
+            eq(List.of(storage.resolve(EXISTING_UUID))),
+            eq(false), any(),
+            any(), eq(singleFile))).thenReturn(entity);
+
+        mockMvc.perform(post("/api/report").contentType(MediaType.APPLICATION_JSON).content("""
+            {"reportSpec":{"path":["master","666"],"executorInfo":{"buildName":"#666"}},
+             "results":["%s"],"deleteResults":false%s}
+            """.formatted(EXISTING_UUID, option)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("uuid").value(EXISTING_UUID));
+        verify(reportService).generate(eq("master/666"),
+            eq(List.of(storage.resolve(EXISTING_UUID))),
+            eq(false),
+            argThat(info -> "#666".equals(info.getBuildName())),
+            any(), eq(singleFile));
+    }
 
     private static final String EXISTING_UUID = "a1913f97-a5b5-469b-8459-d7dd66ef55bc";
     private static final String MISSING_UUID = "b2a24f08-b6c6-57a3-9561-def178a77ce0";

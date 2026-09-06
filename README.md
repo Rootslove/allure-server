@@ -255,6 +255,25 @@ Response:
 
 Memorize `url`
 
+To generate a standalone HTML report (equivalent to `allure generate --single-file`),
+add `"singleFile": true` to the same JSON body, alongside `deleteResults`:
+
+```json
+{
+  "reportSpec": {"path": ["master", "666"], "executorInfo": {"buildName": "#666"}},
+  "results": ["1037f8be-68fb-4756-98b6-779637aa4670"],
+  "deleteResults": false,
+  "singleFile": true
+}
+```
+
+The endpoint remains `POST /api/report` and returns the same response with HTTP 201.
+Download `index.html` from the returned `url` and open the saved file directly in a browser;
+no running Allure server is needed to view the report. Test data, attachments and Brew.QA
+branding are embedded. Omitted or `false` preserves the usual directory-based report.
+As with the Allure CLI single-file mode, history is embedded rather than exported as a
+`history/` directory, so this report does not supply history to subsequent generations.
+
 > :warning: **Generated Reports, and their History are grouping by `path` key. This key means something like `project` or `job` or `branch`. The latest report with the same `path` will be active**: It is not a real path - it's a logical path. The same situation with `path` column in the Web UI!
 
 ### Access to generated reports

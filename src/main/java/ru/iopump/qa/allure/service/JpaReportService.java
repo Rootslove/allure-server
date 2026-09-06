@@ -244,6 +244,16 @@ public class JpaReportService {
                                  @Nullable ExecutorInfo executorInfo,
                                  String baseUrl
     ) throws IOException {
+        return generate(reportPath, resultDirs, clearResults, executorInfo, baseUrl, false);
+    }
+
+    public ReportEntity generate(@NonNull String reportPath,
+                                 @NonNull List<Path> resultDirs,
+                                 boolean clearResults,
+                                 @Nullable ExecutorInfo executorInfo,
+                                 String baseUrl,
+                                 boolean singleFile
+    ) throws IOException {
         // Preconditions
         Preconditions.checkArgument(!resultDirs.isEmpty());
         resultDirs.forEach(i -> Preconditions.checkArgument(Files.exists(i), "Result '%s' doesn't exist", i));
@@ -280,7 +290,7 @@ public class JpaReportService {
                 .orElse(resultDirs);
 
             // Generate new report with history
-            reportGenerator.generate(destination, resultDirsToGenerate, reportUrl);
+            reportGenerator.generate(destination, resultDirsToGenerate, reportUrl, singleFile);
 
             log.info("Report '{}' generated according to results '{}'", destination, resultDirsToGenerate);
         } finally {
