@@ -276,6 +276,103 @@ As with the Allure CLI single-file mode, history is embedded rather than exporte
 
 > :warning: **Generated Reports, and their History are grouping by `path` key. This key means something like `project` or `job` or `branch`. The latest report with the same `path` will be active**: It is not a real path - it's a logical path. The same situation with `path` column in the Web UI!
 
+### AI Analysis
+
+Failures of a run can be clustered and explained by a language model. The work is split in two so
+that nothing waits for the model:
+
+**1. Generate with the tab.** Add `"aiAnalysis": true` to the same `POST /api/report` body (in the
+Web UI: the *Analyse failures with AI* checkbox in the generate dialog):
+
+```json
+{
+  "reportSpec": {"path": ["master", "666"], "executorInfo": {"buildName": "#666"}},
+  "results": ["1037f8be-68fb-4756-98b6-779637aa4670"],
+  "deleteResults": true,
+  "aiAnalysis": true
+}
+```
+
+Before the generator runs, the failures are grouped by error signature and compared with the
+previous run of the same `path`. The report is created with the *AI Analysis* tab already in place
+(clusters, `[AI] …` categories, a section in every failed test), only without the model's verdict -
+status `pending`. This costs seconds, and the response is the usual HTTP 201. A copy of the results
+is kept under `allure-ai.cache-dir` so the model has something to read later, even when
+`deleteResults` was `true`.
+
+**2. Analyse with the model.** Either the *Analyse report with AI* button on the row in
+`/app/reports`, or:
+
+```shell
+curl -X POST http://localhost:8080/api/report/{uuid}/ai   # 202 accepted, 200 if nothing to do
+curl http://localhost:8080/api/report/{uuid}/ai           # status, clusters, answered, resultUuid
+```
+
+A single-threaded worker sends every cluster to OpenCode and then generates a **new version of the
+same report path** with the answers in it; the pending version stays in history, as after any
+regeneration. Statuses are `none`, `pending`, `queued`, `running`, `done`, `partial` (some clusters
+without an answer - repeating only redoes those) and `error`. With `allure-ai.auto=true` step 2
+starts by itself once step 1 has committed, so a CI pipeline only adds the one JSON field.
+
+**What you need.**
+
+- A reachable `opencode serve` with a model provider configured, as a sidecar next to the server:
+
+  ```yaml
+  services:
+    allure-server:
+      environment:
+        ALLURE_AI_OPENCODE_URL: http://opencode:4096
+        ALLURE_AI_PROVIDER: litellm
+        ALLURE_AI_MODEL: qwen3.8
+        ALLURE_AI_AGENT: allure-ai
+    opencode:
+      image: opencode:latest              # any image that runs `opencode serve --port 4096`
+      command: ["serve", "--hostname", "0.0.0.0", "--port", "4096"]
+      volumes:
+        - ./opencode:/root/.config/opencode:ro   # provider config and its credentials live here
+  ```
+
+  No model credential is ever given to the server: it only knows the OpenCode URL.
+
+- The `ai-analysis` Allure plugin folder in `allure/plugins` on the volume, for the tab itself. The
+  data behind it (`[AI]` categories, the section in each failed test, the `AI Analysis` line in the
+  Overview environment) is plain Allure and shows up without the plugin.
+
+**Limits.**
+
+- Exactly one results directory per request, and not together with `singleFile` - both are rejected
+  with HTTP 400. Merging several results directories into one analysis is not supported.
+- The comparison with the previous run needs `executor.json` in the uploaded results (any CI
+  publisher writes one). Without it a directory is split into runs by a 60-minute gap between tests,
+  which is right for a nightly job but wrong for a directory that accumulated over weeks.
+- Step 2 publishes a second report for the same night, and report history is copied from the
+  pending one, so that night appears twice in the *history trend* widget. This is the price of not
+  blocking the generation request.
+- If a newer report of the same `path` appears while the model is thinking, nothing is published:
+  the job ends `done` with a note, and the analysed results are kept as the previous run for the
+  next generation.
+
+#### Building on a non-ASCII path
+
+`./gradlew test` fails on every test class with `ClassNotFoundException` when the checkout sits
+under a path with non-ASCII characters on Windows: Gradle 8.7 passes the test worker its classpath
+through a JVM `@argfile`, and the JVM reads that file in the OS encoding. Linux CI is unaffected.
+The workaround is an init script kept **outside** the repository, which moves the build directory
+to an ASCII path (see the *AI Analysis* notes in the `allure-ai` project, `docs/TESTING.md`, for its
+full text):
+
+```shell
+JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot' \
+sh gradlew test --no-daemon \
+   -I '<ascii path>/asciibuild.gradle' \
+   -Dorg.gradle.java.installations.paths=<path to JDK 25>
+```
+
+`JAVA_HOME` points at a JDK 21 because Gradle 8.7 itself does not start on JDK 25; the Java 25
+toolchain the build asks for is found through `-Dorg.gradle.java.installations.paths`. On a path
+without such characters the plain `./gradlew test` is enough.
+
 ### Access to generated reports
 
 After generating you can access the latest report by `http://localhost:8080/allure/reports/master/666/index.html`
@@ -552,6 +649,21 @@ Defaults are the ones shipped in `src/main/resources/application.yaml`.
 | `spring.servlet.multipart.max-request-size` | `SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE` | size | `100MB` | Max size of the whole compressed request |
 | `allure.upload.max-uncompressed-bytes` | `ALLURE_UPLOAD_MAX_UNCOMPRESSED_BYTES` | long | `4294967296` (4 GiB) | Cumulative decompressed size allowed per archive. Zip-bomb guard: multipart limits cap only the compressed body |
 | `allure.upload.max-entries` | `ALLURE_UPLOAD_MAX_ENTRIES` | long | `100000` | Max number of entries in one results archive |
+
+#### AI analysis
+
+| Property | Env var | Type | Default | Description |
+|---|---|---|---|---|
+| `allure-ai.enabled` | `ALLURE_AI_ENABLED` | boolean | `true` | Master switch. When `false`, `aiAnalysis: true` is ignored and the generation is the ordinary one |
+| `allure-ai.opencode-url` | `ALLURE_AI_OPENCODE_URL` | string | `http://127.0.0.1:4096` | Base URL of the `opencode serve` instance reachable from the server |
+| `allure-ai.provider` | `ALLURE_AI_PROVIDER` | string | `litellm` | OpenCode provider id |
+| `allure-ai.model` | `ALLURE_AI_MODEL` | string | `qwen3.8` | Model id inside the provider |
+| `allure-ai.agent` | `ALLURE_AI_AGENT` | string | `allure-ai` | OpenCode agent. It must be declared without tools |
+| `allure-ai.parallel` | `ALLURE_AI_PARALLEL` | int | `2` | Clusters analysed in parallel within one job. Jobs never overlap |
+| `allure-ai.timeout-seconds` | `ALLURE_AI_TIMEOUT_SECONDS` | long | `300` | Timeout of one model answer. The default assumes a LiteLLM gateway; a weaker provider needs more. Measured against a local LM Studio with `parallel=1`, answers took up to 104 s, and the allure-ai measurement archive has clusters at 390 s — raise it there, or every cluster ends up without an answer |
+| `allure-ai.auto` | `ALLURE_AI_AUTO` | boolean | `false` | Start the model automatically after a generation with `aiAnalysis` |
+| `allure-ai.cache-dir` | `ALLURE_AI_CACHE_DIR` | string | `allure/allure-ai` | Where the results copies and the job files live |
+| `allure-ai.sweep-cron` | `ALLURE_AI_SWEEP_CRON` | string | `0 30 3 * * *` | Cron of the housekeeping that drops copies whose report is gone. `-` disables it |
 
 #### Scheduled cleanup
 

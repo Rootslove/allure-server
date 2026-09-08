@@ -15,11 +15,13 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import ru.iopump.qa.allure.ai.AiAnalysisService;
 import ru.iopump.qa.allure.config.BrandingService;
 import ru.iopump.qa.allure.entity.ReportEntity;
 import ru.iopump.qa.allure.helper.AllureReportGenerator;
@@ -62,6 +64,18 @@ public class JpaReportService {
     private final BrandingService branding;
 
     private final AtomicBoolean init = new AtomicBoolean();
+
+    /**
+     * Optional AI-analysis add-on. Injected through a setter and not the constructor: the add-on
+     * needs this service back (its worker publishes a new version of the report), and setter
+     * injection resolves that cycle without changing the existing constructor contract.
+     */
+    private AiAnalysisService aiAnalysisService;
+
+    @Autowired(required = false)
+    public void setAiAnalysisService(AiAnalysisService aiAnalysisService) {
+        this.aiAnalysisService = aiAnalysisService;
+    }
 
     public JpaReportService(AllureProperties cfg,
                             ObjectMapper objectMapper,
@@ -334,6 +348,54 @@ public class JpaReportService {
         prevEntity.ifPresent(e -> e.setActive(false));
 
         return newEntity;
+    }
+
+    /**
+     * Same generation, plus the AI analysis of the failures.
+     * <p>
+     * The offline part of the analysis runs BEFORE the generator, over the very results the report
+     * is about to be built from, so its output (clusters, {@code [AI]} categories, per-test sections,
+     * {@code ai-analysis.json} with status {@code pending}) is part of the report from the first
+     * second. The model is deliberately NOT invoked here - it would hold the HTTP request open for
+     * minutes; it runs later, from {@code POST /api/report/{uuid}/ai}, over the copy of the results
+     * this method keeps.
+     * <p>
+     * {@code clearResults} therefore stops meaning "delete the results after generation" and starts
+     * meaning "the caller does not need them anymore": they are moved into the analysis cache
+     * instead of being deleted, because the model still has to read them.
+     *
+     * @param aiAnalysis when false - or when the add-on is absent or disabled - this is exactly the
+     *                   six-argument generation
+     * @throws ResponseStatusException 400 for the two combinations the analysis cannot serve
+     */
+    public ReportEntity generate(@NonNull String reportPath,
+                                 @NonNull List<Path> resultDirs,
+                                 boolean clearResults,
+                                 @Nullable ExecutorInfo executorInfo,
+                                 String baseUrl,
+                                 boolean singleFile,
+                                 boolean aiAnalysis
+    ) throws IOException {
+        if (!aiAnalysis || aiAnalysisService == null || !aiAnalysisService.isEnabled()) {
+            return generate(reportPath, resultDirs, clearResults, executorInfo, baseUrl, singleFile);
+        }
+        if (singleFile) {
+            // A standalone index.html embeds no plugin data files, so the AI Analysis tab would be
+            // missing from exactly the report that asked for it.
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "aiAnalysis is not compatible with singleFile");
+        }
+        if (resultDirs.size() != 1) {
+            // The analysis reads one results directory as one test run; merging several is out of scope.
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "aiAnalysis requires exactly one results directory");
+        }
+
+        final Path resultDir = resultDirs.get(0);
+        final AiAnalysisService.Prepared prepared = aiAnalysisService.prepare(resultDir, reportPath);
+        final ReportEntity entity = generate(reportPath, resultDirs, false, executorInfo, baseUrl, false);
+        aiAnalysisService.register(entity.getUuid(), resultDir, reportPath, baseUrl, clearResults, prepared);
+        return entity;
     }
 
     ///// PRIVATE /////

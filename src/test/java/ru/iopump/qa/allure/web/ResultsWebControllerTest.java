@@ -125,7 +125,8 @@ class ResultsWebControllerTest {
         // GIVEN — valid UUID and reportPath; service and resultService respond successfully
         ReportEntity entity = new ReportEntity();
         entity.setUuid(UUID.fromString(VALID_UUID));
-        when(reportService.generate(any(), any(), anyBoolean(), any(), any())).thenReturn(entity);
+        when(reportService.generate(any(), any(), anyBoolean(), any(), any(), anyBoolean(), anyBoolean()))
+            .thenReturn(entity);
         when(resultService.getStoragePath()).thenReturn(Path.of("allure/results"));
 
         // WHEN — form post with valid reportPath, resultUuids, and deleteResults=false
@@ -143,7 +144,7 @@ class ResultsWebControllerTest {
         assertThat(flash.get(FLASH_LEVEL_KEY))
             .as("generate success: flash level must be 'success'")
             .isEqualTo(LEVEL_SUCCESS);
-        verify(reportService).generate(any(), any(), anyBoolean(), any(), any());
+        verify(reportService).generate(any(), any(), anyBoolean(), any(), any(), anyBoolean(), anyBoolean());
     }
 
     // ─────────────────────────── delete ───────────────────────────────────────

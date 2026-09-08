@@ -98,7 +98,8 @@ public class AllureReportController {
             reportGenerateRequest.isDeleteResults(),
             reportGenerateRequest.getReportSpec().getExecutorInfo(),
             baseUrl(),
-            reportGenerateRequest.isSingleFile()
+            reportGenerateRequest.isSingleFile(),
+            reportGenerateRequest.isAiAnalysis()
         );
 
         return new ReportResponse(

@@ -32,7 +32,7 @@
                    sortKey: '',
                    sortDir: 'none',
                    totals: { count: ${totalCount}, sizeDisplay: '${totalSizeDisplay}' },
-                   form: { executorName: '', executorType: '', executorUrl: '', buildName: '', buildUrl: '', reportUrl: '', reportName: '', reportPath: '', deleteResults: true },
+                   form: { executorName: '', executorType: '', executorUrl: '', buildName: '', buildUrl: '', reportUrl: '', reportName: '', reportPath: '', deleteResults: true, aiAnalysis: false },
                    visibleUuids() {
                      const tbody = document.getElementById('results-tbody');
                      if (!tbody) return [];
@@ -331,6 +331,13 @@
                                        x-model="form.deleteResults"
                                        class="h-4 w-4 rounded border-border bg-surface text-primary focus:ring-primary">
                                 Delete selected results after successful generation
+                            </label>
+
+                            <label class="flex items-center gap-2 text-sm text-text">
+                                <input type="checkbox" name="aiAnalysis" value="true"
+                                       x-model="form.aiAnalysis"
+                                       class="h-4 w-4 rounded border-border bg-surface text-primary focus:ring-primary">
+                                Analyse failures with AI (adds the AI Analysis tab; one result, not with single file)
                             </label>
 
                             <div class="flex justify-end gap-2 pt-2">

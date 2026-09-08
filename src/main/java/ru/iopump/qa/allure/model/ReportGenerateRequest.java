@@ -41,6 +41,12 @@ public class ReportGenerateRequest {
         description = "Embed report data and assets in a standalone index.html", defaultValue = "false")
     boolean singleFile = false;
 
+    /** Cluster the failures with allure-ai before generation and keep the results for the model. */
+    @Schema(
+        description = "Add the AI Analysis tab and keep a copy of the results for POST /api/report/{uuid}/ai",
+        defaultValue = "false")
+    boolean aiAnalysis = false;
+
     @JsonIgnore
     public List<Path> getResultsAsPath(@NonNull Path baseResultDir) {
         return results.stream().map(p -> baseResultDir.resolve(Paths.get(p))).collect(Collectors.toUnmodifiableList());
