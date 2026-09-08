@@ -356,22 +356,19 @@ starts by itself once step 1 has committed, so a CI pipeline only adds the one J
 #### Building on a non-ASCII path
 
 `./gradlew test` fails on every test class with `ClassNotFoundException` when the checkout sits
-under a path with non-ASCII characters on Windows: Gradle 8.7 passes the test worker its classpath
-through a JVM `@argfile`, and the JVM reads that file in the OS encoding. Linux CI is unaffected.
-The workaround is an init script kept **outside** the repository, which moves the build directory
-to an ASCII path (see the *AI Analysis* notes in the `allure-ai` project, `docs/TESTING.md`, for its
-full text):
+under a path with non-ASCII characters on Windows (seen with both Gradle 8.7 and 9.4.1): the test
+worker gets its classpath through a JVM `@argfile`, and the JVM reads that file in the OS encoding.
+Linux CI is unaffected. The workaround is an init script kept **outside** the repository, which
+moves the build directory to an ASCII path (see the *AI Analysis* notes in the `allure-ai` project,
+`docs/TESTING.md`, for its full text):
 
 ```shell
-JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot' \
-sh gradlew test --no-daemon \
-   -I '<ascii path>/asciibuild.gradle' \
-   -Dorg.gradle.java.installations.paths=<path to JDK 25>
+JAVA_HOME='<path to JDK 25>' sh gradlew test --no-daemon -I '<ascii path>/asciibuild.gradle'
 ```
 
-`JAVA_HOME` points at a JDK 21 because Gradle 8.7 itself does not start on JDK 25; the Java 25
-toolchain the build asks for is found through `-Dorg.gradle.java.installations.paths`. On a path
-without such characters the plain `./gradlew test` is enough.
+The wrapper is Gradle 9.4.1 (as upstream) and runs on the same JDK 25 the toolchain and the
+Dockerfile use, so no second JDK is needed. On a path without such characters the plain
+`./gradlew test` is enough.
 
 ### Access to generated reports
 
