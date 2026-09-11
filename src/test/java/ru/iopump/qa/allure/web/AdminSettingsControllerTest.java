@@ -18,17 +18,21 @@ import ru.iopump.qa.allure.config.RedirectConfiguration;
 import ru.iopump.qa.allure.config.WebConfiguration;
 import ru.iopump.qa.allure.entity.UserEntity;
 import ru.iopump.qa.allure.entity.UserRole;
+import ru.iopump.qa.allure.ai.AiConnectionCheckService;
+import ru.iopump.qa.allure.ai.AiSettingsService;
 import ru.iopump.qa.allure.properties.AllureProperties;
 import ru.iopump.qa.allure.properties.BasicProperties;
 import ru.iopump.qa.allure.security.CurrentUserProvider;
 import ru.iopump.qa.allure.service.ApiTokenService;
 import ru.iopump.qa.allure.service.SystemSettingsService;
+import ru.iopump.qa.allure.web.dto.AiSettingsForm;
 
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -55,6 +59,9 @@ class AdminSettingsControllerTest {
 
     private static final String SETTINGS_PATH = "/app/admin/settings";
     private static final String TOGGLE_PATH = "/app/admin/settings/require-api-auth";
+    private static final String AI_PATH = "/app/admin/settings/ai";
+    private static final String CONFIGURED_MODEL = "qwen3.8";
+    private static final int CONFIGURED_PARALLEL = 2;
     private static final String FLASH_KEY = "flash";
     private static final String FLASH_LEVEL_KEY = "level";
     private static final String FLASH_MESSAGE_KEY = "message";
@@ -73,6 +80,12 @@ class AdminSettingsControllerTest {
     @MockitoBean
     private ApiTokenService apiTokenService;
 
+    @MockitoBean
+    private AiSettingsService aiSettingsService;
+
+    @MockitoBean
+    private AiConnectionCheckService aiConnectionCheckService;
+
     private UserEntity adminActor;
 
     @BeforeEach
@@ -85,6 +98,7 @@ class AdminSettingsControllerTest {
             .createdAt(Instant.now())
             .build();
         when(currentUserProvider.current()).thenReturn(adminActor);
+        when(aiSettingsService.effective()).thenReturn(configuredEffective());
     }
 
     @Test
@@ -174,7 +188,68 @@ class AdminSettingsControllerTest {
             .contains("OPTIONAL");
     }
 
+    @Test
+    @DisplayName("should render the AI analysis card with the effective values when GET /app/admin/settings")
+    void index_rendersAiCard() throws Exception {
+        // GIVEN - a settings row with no AI override, so every AI value comes from the configuration
+        when(systemSettingsService.current())
+            .thenReturn(new SystemSettingsService.Snapshot(false, Instant.now(), ADMIN_USERNAME));
+
+        // WHEN - GET the settings page
+        MvcResult result = mockMvc.perform(get(SETTINGS_PATH))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        // THEN - the card is there with the effective model and the origin of that value
+        final String body = result.getResponse().getContentAsString();
+        assertThat(body).as("AI card heading").contains("AI analysis");
+        assertThat(body).as("form posting to the save endpoint").contains("action=\"" + AI_PATH + "\"");
+        assertThat(body).as("effective model on the card").contains(CONFIGURED_MODEL);
+        assertThat(body).as("origin of an unset field").contains("CONFIGURATION");
+    }
+
+    @Test
+    @DisplayName("should bind blank text fields to null when POST /app/admin/settings/ai")
+    void updateAiSettings_bindsBlankFieldsToNull() throws Exception {
+        // GIVEN - a form where only the provider is filled in; the rest is empty or whitespace
+        // WHEN - the card is saved
+        mockMvc.perform(post(AI_PATH)
+                .param("enabled", "")
+                .param("opencodeUrl", "  http://127.0.0.1:4096  ")
+                .param("provider", "lmstudio")
+                .param("model", "")
+                .param("agent", "   ")
+                .param("parallel", "")
+                .param("timeoutSeconds", "")
+                .param("auto", ""))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl(SETTINGS_PATH));
+
+        // THEN - the service is handed nulls for them, and a trimmed value for the url
+        verify(systemSettingsService).updateAiSettings(
+            eq(new AiSettingsForm(null, "http://127.0.0.1:4096", "lmstudio", null, null, null, null, null)),
+            eq(ADMIN_USERNAME));
+    }
+
     ///// helpers /////
+
+    /** Every setting in force from the configuration, i.e. nothing overridden in the admin panel. */
+    private static AiSettingsService.Effective configuredEffective() {
+        return new AiSettingsService.Effective(
+            configured(true),
+            configured("http://127.0.0.1:4096"),
+            configured("litellm"),
+            configured(CONFIGURED_MODEL),
+            configured("allure-ai"),
+            configured(CONFIGURED_PARALLEL),
+            configured(300L),
+            configured(false)
+        );
+    }
+
+    private static <T> AiSettingsService.Value<T> configured(T value) {
+        return new AiSettingsService.Value<>(value, AiSettingsService.Source.CONFIGURATION);
+    }
 
     private static Map<?, ?> extractFlashMap(MvcResult result) {
         final Object flashValue = result.getFlashMap().get(FLASH_KEY);

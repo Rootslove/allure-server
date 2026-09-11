@@ -66,6 +66,9 @@ public class ReportsWebController {
     private static final String VIEW_INDEX = "reports/index";
     private static final String REDIRECT_INDEX = "redirect:/app/reports";
 
+    /** Service key of the AI status map: never a report uuid, so it can never collide with a row. */
+    private static final String ANALYSIS_DISABLED_KEY = "";
+
     private final JpaReportService reportService;
     private final AllureProperties allureProperties;
 
@@ -174,6 +177,10 @@ public class ReportsWebController {
     /**
      * AI analysis status per report uuid for the grid. Resolved once per request - one pass over the
      * analysis cache - instead of a lookup per rendered row.
+     * <p>
+     * The empty string is not a uuid and is used as a service key: {@code "" -> "disabled"} tells the
+     * grid that the analysis is switched off, so it keeps showing what every report already has (the
+     * badge) and drops the button that would start a new run - the endpoint behind it answers 409 then.
      */
     @ModelAttribute("aiStatuses")
     public Map<String, String> aiStatuses() {
@@ -181,8 +188,13 @@ public class ReportsWebController {
         if (service == null) {
             return Map.of();
         }
-        return service.statuses().entrySet().stream()
-            .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().json()));
+        final Map<String, String> statuses = service.statuses().entrySet().stream()
+            .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().json(),
+                (first, second) -> second, LinkedHashMap::new));
+        if (!service.isEnabled()) {
+            statuses.put(ANALYSIS_DISABLED_KEY, "disabled");
+        }
+        return statuses;
     }
 
     /**

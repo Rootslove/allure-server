@@ -377,6 +377,11 @@ public class JpaReportService {
                                  boolean aiAnalysis
     ) throws IOException {
         if (!aiAnalysis || aiAnalysisService == null || !aiAnalysisService.isEnabled()) {
+            if (aiAnalysis && aiAnalysisService != null) {
+                // Asked for and switched off: without this line the report simply comes back without
+                // any AI content and the caller has nothing to look at to find out why.
+                log.info("AI analysis requested for {} but disabled in settings/configuration, skipped", reportPath);
+            }
             return generate(reportPath, resultDirs, clearResults, executorInfo, baseUrl, singleFile);
         }
         if (singleFile) {

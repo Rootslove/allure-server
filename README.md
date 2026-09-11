@@ -353,6 +353,28 @@ starts by itself once step 1 has committed, so a CI pipeline only adds the one J
   the job ends `done` with a note, and the analysed results are kept as the previous run for the
   next generation.
 
+#### Runtime settings
+
+Eight of the `allure-ai.*` settings can be changed while the server runs, in **Admin -> Settings**,
+card *AI analysis*: `enabled`, `opencodeUrl`, `provider`, `model`, `agent`, `parallel` (1-8),
+`timeoutSeconds` (30-3600) and `auto`. `cache-dir` and `sweep-cron` are configuration only - moving
+the copies or rescheduling a cron while a job is running is not a settings change.
+
+- A field left **empty** (or `Default (configuration)` in a list) means "no override": the value
+  from the configuration stays in force. The badge next to every field says which of the two is in
+  force right now, `SETTINGS` or `CONFIGURATION`. *Reset to configuration* clears all eight at once.
+- The settings row wins over the configuration, `enabled` included: the panel can switch the
+  analysis on when the configuration has it off, and off when it has it on. While it is off,
+  `POST /api/report/{uuid}/ai` answers `409` and the analysis button disappears from the reports
+  grid, while the AI status badges of the reports stay: switching the analysis off hides what it
+  could still start, not what it has already produced.
+- *Check connection* calls `GET <opencodeUrl>/config/providers` with the values currently in the
+  form (5 s to connect, 5 s to answer) and lists the providers it got back, saying whether the
+  provider/model pair is among them. Nothing is saved by a check.
+- The settings are read at three moments: when a generation asks whether the analysis is on, when a
+  job is registered (`auto`), and once at the start of a worker run. A job already running keeps
+  the settings it started with; the next one picks up the new ones without a restart.
+
 #### Building on a non-ASCII path
 
 `./gradlew test` fails on every test class with `ClassNotFoundException` when the checkout sits
@@ -648,6 +670,10 @@ Defaults are the ones shipped in `src/main/resources/application.yaml`.
 | `allure.upload.max-entries` | `ALLURE_UPLOAD_MAX_ENTRIES` | long | `100000` | Max number of entries in one results archive |
 
 #### AI analysis
+
+All of these except `cache-dir` and `sweep-cron` can be overridden at runtime in
+**Admin -> Settings**, card *AI analysis*; the value stored there wins over the one below. See
+*Runtime settings* in the [AI Analysis](#ai-analysis) section.
 
 | Property | Env var | Type | Default | Description |
 |---|---|---|---|---|

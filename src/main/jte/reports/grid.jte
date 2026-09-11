@@ -16,6 +16,7 @@
   </tr>
 @else
   !{ int idx = 0; }
+  !{ var aiOff = aiStatuses.containsKey(""); }
   @for(ReportRow r : rows)
     !{ var ai = aiStatuses.getOrDefault(r.uuid(), "none"); }
     !{ var aiBadge = ai.equals("error") ? "bg-error/15 text-error"
@@ -115,7 +116,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
             </svg>
           </button>
-          @if(canMutate && (ai.equals("pending") || ai.equals("partial") || ai.equals("error")))
+          @if(canMutate && !aiOff && (ai.equals("pending") || ai.equals("partial") || ai.equals("error")))
           <form action="/app/reports/${r.uuid()}/ai" method="post" class="inline">
             @template.partials.csrf(csrf = csrf)
             <button type="submit"

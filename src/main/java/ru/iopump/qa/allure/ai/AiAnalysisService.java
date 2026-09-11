@@ -80,6 +80,7 @@ public class AiAnalysisService {
     private static final Duration MIN_AGE_BEFORE_SWEEP = Duration.ofHours(1);
 
     private final AiProperties properties;
+    private final AiSettingsService settings;
     private final JpaReportRepository repository;
     private final ObjectProvider<JpaReportService> reportService;
     private final ObjectMapper objectMapper;
@@ -94,8 +95,12 @@ public class AiAnalysisService {
         return thread;
     });
 
+    /**
+     * Read point 1 of the effective settings: the generation asks before it prepares anything. The
+     * admin panel wins over {@code allure-ai.enabled}, in both directions.
+     */
     public boolean isEnabled() {
-        return properties.enabled();
+        return settings.effective().enabled().value();
     }
 
     /**
@@ -199,7 +204,9 @@ public class AiAnalysisService {
         job.setError(prepared.error());
         writeJob(uuid, job);
         log.info("AI analysis job '{}' registered with status '{}'", uuid, job.getStatus().json());
-        if (properties.auto() && job.getStatus() == AiJobStatus.PENDING) {
+        // Read point 2: still inside the generation transaction, so the job registered by this
+        // request obeys the 'auto' setting as it is now, not as it was when the server started.
+        if (settings.effective().auto().value() && job.getStatus() == AiJobStatus.PENDING) {
             startAfterCommit(uuid, baseUrl);
         }
     }
@@ -235,6 +242,11 @@ public class AiAnalysisService {
      *                one from and report links must stay absolute
      */
     public synchronized AiJob enqueue(String uuid, String baseUrl) {
+        if (!isEnabled()) {
+            // Switched off in the admin panel (or in the configuration) after this report was
+            // generated: the copy is still there, but nobody may start the model over it.
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "AI analysis is disabled");
+        }
         final AiJob job = readJob(uuid);
         if (job == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -292,7 +304,12 @@ public class AiAnalysisService {
         writeJob(uuid, job);
         try {
             final Path results = resultsOf(uuid);
-            final EnrichOutcome outcome = EnrichRunner.run(llmRequest(results, job).build());
+            // Read point 3, and the only one in the worker thread: one snapshot for the whole run.
+            // A job that is already going keeps the settings it started with - changing the model
+            // halfway through would analyse one half of the clusters with one model and the other
+            // half with another.
+            final AiSettingsService.Effective effective = settings.effective();
+            final EnrichOutcome outcome = EnrichRunner.run(llmRequest(results, job, effective).build());
             final int clusters = outcome.getResult().getClusters().size();
             final int withoutAnswer = Math.max(outcome.getClustersWithoutAnswer(), 0);
             job.setClusters(clusters);
@@ -357,16 +374,16 @@ public class AiAnalysisService {
         return newUuid;
     }
 
-    private EnrichRequest.Builder llmRequest(Path results, AiJob job) {
+    private EnrichRequest.Builder llmRequest(Path results, AiJob job, AiSettingsService.Effective effective) {
         final EnrichRequest.Builder request = EnrichRequest.builder(results)
             .llm(true)
             .quiet(true)
-            .opencodeUrl(properties.opencodeUrl())
-            .provider(properties.provider())
-            .model(properties.model())
-            .agent(properties.agent())
-            .parallel(properties.parallel())
-            .timeoutSeconds(properties.timeoutSeconds())
+            .opencodeUrl(effective.opencodeUrl().value())
+            .provider(effective.provider().value())
+            .model(effective.model().value())
+            .agent(effective.agent().value())
+            .parallel(effective.parallel().value())
+            .timeoutSeconds(effective.timeoutSeconds().value())
             .out(logStream());
         final String previousUuid = job.getPreviousUuid();
         if (previousUuid != null && Files.isDirectory(resultsOf(previousUuid))) {

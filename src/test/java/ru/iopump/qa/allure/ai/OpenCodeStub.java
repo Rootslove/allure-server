@@ -60,6 +60,11 @@ final class OpenCodeStub implements AutoCloseable {
         this.mode = mode;
     }
 
+    /** How many {@code POST /session} calls this stub has served - i.e. how often it was talked to. */
+    int sessionsStarted() {
+        return sessions.get();
+    }
+
     @Override
     public void close() {
         server.stop(0);

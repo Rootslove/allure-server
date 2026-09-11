@@ -11,14 +11,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import ru.iopump.qa.allure.repo.JpaReportRepository;
 import ru.iopump.qa.allure.service.JpaReportService;
+import ru.iopump.qa.allure.service.SystemSettingsService;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * The status {@code ai-job.json} is born with. Two of the three branches look alike from the
@@ -93,14 +97,22 @@ class AiAnalysisRegisterTest {
         Files.writeString(resultDir.resolve("executor.json"), "{}", StandardCharsets.UTF_8);
 
         final UUID reportUuid = UUID.randomUUID();
+        final AiProperties properties = properties(cacheDir);
         final AiAnalysisService service = new AiAnalysisService(
-            properties(cacheDir), repository, reportService, objectMapper);
+            properties, settingsOf(properties), repository, reportService, objectMapper);
         try {
             service.register(reportUuid, resultDir, REPORT_PATH, BASE_URL, false, prepared);
         } finally {
             service.stop();
         }
         return objectMapper.readTree(cacheDir.resolve(reportUuid.toString()).resolve("ai-job.json").toFile());
+    }
+
+    /** Effective settings with no row behind them: the configuration above is all there is. */
+    private static AiSettingsService settingsOf(AiProperties properties) {
+        final SystemSettingsService systemSettings = mock(SystemSettingsService.class);
+        when(systemSettings.current()).thenReturn(new SystemSettingsService.Snapshot(false, Instant.EPOCH, null));
+        return new AiSettingsService(properties, systemSettings);
     }
 
     /** Defaults everywhere except the cache directory: {@code auto} stays off, so nothing is queued. */
