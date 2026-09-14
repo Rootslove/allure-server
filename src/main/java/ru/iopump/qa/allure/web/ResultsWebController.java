@@ -148,7 +148,9 @@ public class ResultsWebController {
                 resultDirs,
                 form.deleteResults(),
                 executorInfo,
-                url(allureProperties)
+                url(allureProperties),
+                false,
+                Boolean.TRUE.equals(form.aiAnalysis())
             );
             log.info("Report '{}' generated via /app/results (path='{}', results={})",
                 entity.getUuid(), reportPath, form.resultUuids().size());

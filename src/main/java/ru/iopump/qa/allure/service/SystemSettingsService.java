@@ -14,8 +14,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import ru.iopump.qa.allure.entity.SystemSettingsEntity;
 import ru.iopump.qa.allure.properties.AppSecurityProperties;
 import ru.iopump.qa.allure.repo.SystemSettingsRepository;
+import ru.iopump.qa.allure.web.dto.AiSettingsForm;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -135,9 +137,107 @@ public class SystemSettingsService implements ApplicationRunner {
         return snapshot;
     }
 
-    public record Snapshot(boolean requireApiAuth, Instant updatedAt, String updatedByUsername) {
+    /**
+     * Overwrites the AI-analysis settings of the singleton row, leaving everything else untouched.
+     * The row is loaded and mutated in place on purpose: rebuilding it through the builder would
+     * silently reset {@code requireApiAuth} (and the audit columns) of the other card on this page.
+     *
+     * @param form          the admin form; a {@code null} component clears that single override
+     * @param actorUsername who is changing the settings, for the audit line
+     */
+    @Transactional
+    public Snapshot updateAiSettings(AiSettingsForm form, String actorUsername) {
+        final SystemSettingsEntity entity = systemSettingsRepository.findById(SystemSettingsEntity.SINGLETON_ID)
+            .orElseGet(() -> SystemSettingsEntity.builder()
+                .id(SystemSettingsEntity.SINGLETON_ID)
+                .build());
+        final String changed = describeChanges(entity, form);
+        entity.setAiEnabled(form.enabled());
+        entity.setAiOpencodeUrl(form.opencodeUrl());
+        entity.setAiProvider(form.provider());
+        entity.setAiModel(form.model());
+        entity.setAiAgent(form.agent());
+        entity.setAiParallel(form.parallel());
+        entity.setAiTimeoutSeconds(form.timeoutSeconds());
+        entity.setAiAuto(form.auto());
+        final Snapshot snapshot = saveAndPublish(entity, actorUsername);
+        log.info("AI settings updated by '{}': {}", actorUsername, changed);
+        return snapshot;
+    }
+
+    /** Clears every AI override, so all eight settings fall back to the {@code allure-ai.*} configuration. */
+    @Transactional
+    public Snapshot resetAiSettings(String actorUsername) {
+        return updateAiSettings(AiSettingsForm.empty(), actorUsername);
+    }
+
+    /**
+     * Stamps the audit columns, saves and publishes the new snapshot to the lock-free read cache
+     * after the commit - for the same reason {@link #updateRequireApiAuth} does it that way.
+     */
+    private Snapshot saveAndPublish(SystemSettingsEntity entity, String actorUsername) {
+        entity.setUpdatedAt(Instant.now());
+        entity.setUpdatedByUsername(actorUsername);
+        final Snapshot snapshot = Snapshot.of(systemSettingsRepository.save(entity));
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                cache.set(snapshot);
+            }
+        });
+        return snapshot;
+    }
+
+    /** Names of the settings this form changes, for the audit log line. */
+    private static String describeChanges(SystemSettingsEntity entity, AiSettingsForm form) {
+        final StringBuilder changed = new StringBuilder();
+        appendIfChanged(changed, "enabled", entity.getAiEnabled(), form.enabled());
+        appendIfChanged(changed, "opencodeUrl", entity.getAiOpencodeUrl(), form.opencodeUrl());
+        appendIfChanged(changed, "provider", entity.getAiProvider(), form.provider());
+        appendIfChanged(changed, "model", entity.getAiModel(), form.model());
+        appendIfChanged(changed, "agent", entity.getAiAgent(), form.agent());
+        appendIfChanged(changed, "parallel", entity.getAiParallel(), form.parallel());
+        appendIfChanged(changed, "timeoutSeconds", entity.getAiTimeoutSeconds(), form.timeoutSeconds());
+        appendIfChanged(changed, "auto", entity.getAiAuto(), form.auto());
+        return changed.length() == 0 ? "nothing changed" : changed.toString();
+    }
+
+    private static void appendIfChanged(StringBuilder changed, String name, Object before, Object after) {
+        if (Objects.equals(before, after)) {
+            return;
+        }
+        if (changed.length() > 0) {
+            changed.append(", ");
+        }
+        changed.append(name).append('=').append(after == null ? "default (configuration)" : after);
+    }
+
+    /**
+     * Immutable view of the settings row. The {@code ai*} components are nullable and {@code null}
+     * means "not overridden in the admin panel": {@code AiSettingsService} then takes the value
+     * from the {@code allure-ai.*} configuration.
+     */
+    public record Snapshot(boolean requireApiAuth,
+                           Instant updatedAt,
+                           String updatedByUsername,
+                           Boolean aiEnabled,
+                           String aiOpencodeUrl,
+                           String aiProvider,
+                           String aiModel,
+                           String aiAgent,
+                           Integer aiParallel,
+                           Long aiTimeoutSeconds,
+                           Boolean aiAuto) {
+
+        /** A snapshot with no AI override at all - used for the pre-startup fallback. */
+        public Snapshot(boolean requireApiAuth, Instant updatedAt, String updatedByUsername) {
+            this(requireApiAuth, updatedAt, updatedByUsername, null, null, null, null, null, null, null, null);
+        }
+
         static Snapshot of(SystemSettingsEntity entity) {
-            return new Snapshot(entity.isRequireApiAuth(), entity.getUpdatedAt(), entity.getUpdatedByUsername());
+            return new Snapshot(entity.isRequireApiAuth(), entity.getUpdatedAt(), entity.getUpdatedByUsername(),
+                entity.getAiEnabled(), entity.getAiOpencodeUrl(), entity.getAiProvider(), entity.getAiModel(),
+                entity.getAiAgent(), entity.getAiParallel(), entity.getAiTimeoutSeconds(), entity.getAiAuto());
         }
     }
 }

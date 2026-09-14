@@ -55,4 +55,39 @@ public class SystemSettingsEntity {
     @Nullable
     @Column(name = "updated_by_username", length = 128)
     private String updatedByUsername;
+
+    // AI analysis overrides. Every one of them is nullable on purpose: null means "not set here",
+    // and the effective value then comes from the AiProperties configuration. See AiSettingsService.
+
+    @Nullable
+    @Column(name = "ai_enabled")
+    private Boolean aiEnabled;
+
+    @Nullable
+    @Column(name = "ai_opencode_url", length = 512)
+    private String aiOpencodeUrl;
+
+    @Nullable
+    @Column(name = "ai_provider", length = 64)
+    private String aiProvider;
+
+    @Nullable
+    @Column(name = "ai_model", length = 64)
+    private String aiModel;
+
+    @Nullable
+    @Column(name = "ai_agent", length = 64)
+    private String aiAgent;
+
+    @Nullable
+    @Column(name = "ai_parallel")
+    private Integer aiParallel;
+
+    @Nullable
+    @Column(name = "ai_timeout_seconds")
+    private Long aiTimeoutSeconds;
+
+    @Nullable
+    @Column(name = "ai_auto")
+    private Boolean aiAuto;
 }

@@ -12,6 +12,7 @@
 @param boolean isAdmin = false
 @param boolean signInRequired = false
 @param CsrfToken csrf = null
+@param Map<String, String> aiStatuses = Map.of()
 !{ var canMutate = currentUser != null && currentUser.authenticated(); }
 @template.layout.main(
     title = "Reports",
@@ -249,7 +250,7 @@
               </tr>
             </thead>
             <tbody id="reports-tbody" class="divide-y divide-border-subtle">
-              @template.reports.grid(rows = rows, totalCount = totalCount, totalSizeDisplay = totalSizeDisplay, canMutate = canMutate)
+              @template.reports.grid(rows = rows, totalCount = totalCount, totalSizeDisplay = totalSizeDisplay, canMutate = canMutate, csrf = csrf, aiStatuses = aiStatuses)
             </tbody>
             <tfoot class="bg-surface/60">
               <tr id="reports-totals-row" class="bg-surface/60">

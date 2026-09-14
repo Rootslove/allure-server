@@ -1,9 +1,13 @@
 @import java.util.List
+@import java.util.Map
+@import org.springframework.security.web.csrf.CsrfToken
 @import ru.iopump.qa.allure.web.ReportRow
 @param List<ReportRow> rows
 @param int totalCount = 0
 @param String totalSizeDisplay = "0 B"
 @param boolean canMutate = false
+@param CsrfToken csrf = null
+@param Map<String, String> aiStatuses = Map.of()
 @if(rows.isEmpty())
   <tr>
     <td colspan="7" class="px-3 py-6 text-center text-sm text-text-muted">
@@ -12,7 +16,12 @@
   </tr>
 @else
   !{ int idx = 0; }
+  !{ var aiOff = aiStatuses.containsKey(""); }
   @for(ReportRow r : rows)
+    !{ var ai = aiStatuses.getOrDefault(r.uuid(), "none"); }
+    !{ var aiBadge = ai.equals("error") ? "bg-error/15 text-error"
+            : ai.equals("done") || ai.equals("partial") ? "bg-primary/15 text-primary"
+            : "bg-surface text-text-muted"; }
     <tr class="hover:bg-surface/60 transition-colors"
         data-idx="${idx}"
         data-path="${r.path() == null ? "" : r.path()}"
@@ -40,6 +49,10 @@
           @if(r.active())
             <span class="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-success"
                   title="Latest report for this path">Active</span>
+          @endif
+          @if(!ai.equals("none"))
+            <span class="inline-flex shrink-0 items-center whitespace-nowrap rounded-full ${aiBadge} px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  title="AI analysis of this report">AI ${ai}</span>
           @endif
         </div>
         @if(r.active())
@@ -103,6 +116,19 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
             </svg>
           </button>
+          @if(canMutate && !aiOff && (ai.equals("pending") || ai.equals("partial") || ai.equals("error")))
+          <form action="/app/reports/${r.uuid()}/ai" method="post" class="inline">
+            @template.partials.csrf(csrf = csrf)
+            <button type="submit"
+                    aria-label="Analyse report with AI"
+                    title="Analyse the failures with the model and publish a new version of this report"
+                    class="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:text-primary hover:bg-surface focus:outline-none focus:ring-2 focus:ring-primary transition-colors">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/>
+              </svg>
+            </button>
+          </form>
+          @endif
           @if(canMutate)
           <button type="button"
                   @click="$dispatch('open-dialog', {id:'confirm-delete-report', uuid:'${r.uuid()}'})"

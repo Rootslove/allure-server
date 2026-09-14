@@ -14,6 +14,8 @@ dependencies {
     /* Allure Generator */
     implementation "io.qameta.allure:allure-plugin-api:$allureVersion"
     implementation "io.qameta.allure:allure-generator:$allureVersion"
+    /* allure-ai core: failure clustering and the model client (thin jar, no transitive deps) */
+    implementation files('libs/allure-ai-core.jar')
     /* QA lib */
     implementation("ru.iopump.qa:qa-tools:$qaLibVersion") { transitive false }
     /* Required by qa-tools ReflectionUtil for classpath scanning of AllureServerPlugin impls. */

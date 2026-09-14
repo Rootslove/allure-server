@@ -59,16 +59,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AllureReportControllerTest {
 
     @ParameterizedTest
-    @ValueSource(strings = {"", ",\"singleFile\":false", ",\"singleFile\":true"})
+    @ValueSource(strings = {"", ",\"singleFile\":false", ",\"singleFile\":true",
+        ",\"aiAnalysis\":true", ",\"singleFile\":false,\"aiAnalysis\":false"})
     void generateReport_passesRequestedFormat(String option) throws Exception {
-        boolean singleFile = option.contains("true");
+        boolean singleFile = option.contains("\"singleFile\":true");
+        boolean aiAnalysis = option.contains("\"aiAnalysis\":true");
         var storage = Path.of("results");
         var entity = ReportEntity.builder().uuid(UUID.fromString(EXISTING_UUID)).path("master/666").build();
         when(resultService.getStoragePath()).thenReturn(storage);
         when(reportService.generate(eq("master/666"),
             eq(List.of(storage.resolve(EXISTING_UUID))),
             eq(false), any(),
-            any(), eq(singleFile))).thenReturn(entity);
+            any(), eq(singleFile), eq(aiAnalysis))).thenReturn(entity);
 
         mockMvc.perform(post("/api/report").contentType(MediaType.APPLICATION_JSON).content("""
             {"reportSpec":{"path":["master","666"],"executorInfo":{"buildName":"#666"}},
@@ -80,7 +82,7 @@ class AllureReportControllerTest {
             eq(List.of(storage.resolve(EXISTING_UUID))),
             eq(false),
             argThat(info -> "#666".equals(info.getBuildName())),
-            any(), eq(singleFile));
+            any(), eq(singleFile), eq(aiAnalysis));
     }
 
     private static final String EXISTING_UUID = "a1913f97-a5b5-469b-8459-d7dd66ef55bc";

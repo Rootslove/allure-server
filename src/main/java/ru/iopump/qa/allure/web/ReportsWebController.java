@@ -4,9 +4,11 @@ import io.qameta.allure.entity.ExecutorInfo;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -15,6 +17,7 @@ import org.springframework.ui.Model;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,9 +26,13 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import ru.iopump.qa.allure.ai.AiAnalysisService;
+import ru.iopump.qa.allure.ai.AiJob;
+import ru.iopump.qa.allure.ai.AiJobStatus;
 import ru.iopump.qa.allure.entity.ReportEntity;
 import ru.iopump.qa.allure.properties.AllureProperties;
 import ru.iopump.qa.allure.service.JpaReportService;
+import ru.iopump.qa.allure.service.PathUtil;
 
 import java.io.IOException;
 import java.net.URI;
@@ -38,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static ru.iopump.qa.allure.helper.Util.url;
 
@@ -58,8 +66,18 @@ public class ReportsWebController {
     private static final String VIEW_INDEX = "reports/index";
     private static final String REDIRECT_INDEX = "redirect:/app/reports";
 
+    /** Service key of the AI status map: never a report uuid, so it can never collide with a row. */
+    private static final String ANALYSIS_DISABLED_KEY = "";
+
     private final JpaReportService reportService;
     private final AllureProperties allureProperties;
+
+    /**
+     * The AI-analysis add-on, optional on purpose: taken as an {@link ObjectProvider} so this
+     * controller keeps working (and its slice test keeps starting) on a build where the add-on is
+     * not present. When it is absent the grid simply shows no AI column content.
+     */
+    private final ObjectProvider<AiAnalysisService> aiAnalysisService;
 
     @GetMapping
     public String index(Model model) {
@@ -153,6 +171,56 @@ public class ReportsWebController {
             : "Deleted " + deleted + " report(s), " + failed + " failed";
         flash.addFlashAttribute("flash", toastMap(level, msg));
         log.info("Bulk-delete on /app/reports: deleted={}, failed={}", deleted, failed);
+        return REDIRECT_INDEX;
+    }
+
+    /**
+     * AI analysis status per report uuid for the grid. Resolved once per request - one pass over the
+     * analysis cache - instead of a lookup per rendered row.
+     * <p>
+     * The empty string is not a uuid and is used as a service key: {@code "" -> "disabled"} tells the
+     * grid that the analysis is switched off, so it keeps showing what every report already has (the
+     * badge) and drops the button that would start a new run - the endpoint behind it answers 409 then.
+     */
+    @ModelAttribute("aiStatuses")
+    public Map<String, String> aiStatuses() {
+        final AiAnalysisService service = aiAnalysisService.getIfAvailable();
+        if (service == null) {
+            return Map.of();
+        }
+        final Map<String, String> statuses = service.statuses().entrySet().stream()
+            .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().json(),
+                (first, second) -> second, LinkedHashMap::new));
+        if (!service.isEnabled()) {
+            statuses.put(ANALYSIS_DISABLED_KEY, "disabled");
+        }
+        return statuses;
+    }
+
+    /**
+     * Second button of the AI analysis: hand the report to the worker. The response is immediate -
+     * the model runs in the background and publishes a new version of the report when it is done, so
+     * the row the user clicked keeps its status until then.
+     */
+    @PostMapping("/{uuid}/ai")
+    public String analyseWithAi(@PathVariable("uuid") @NotBlank @Pattern(regexp = PathUtil.UUID_PATTERN) String uuid,
+                                RedirectAttributes flash) {
+        final AiAnalysisService service = aiAnalysisService.getIfAvailable();
+        if (service == null) {
+            flash.addFlashAttribute("flash", toastMap("error", "AI analysis is not available on this server"));
+            return REDIRECT_INDEX;
+        }
+        try {
+            final AiJob job = service.enqueue(uuid, url(allureProperties));
+            final String message = job.getStatus() == AiJobStatus.QUEUED
+                ? "AI analysis of report '" + uuid + "' is queued"
+                : "AI analysis of report '" + uuid + "' is already '" + job.getStatus().json() + "'";
+            flash.addFlashAttribute("flash", toastMap("success", message));
+            log.info("AI analysis of report '{}' requested via /app/reports, status '{}'", uuid, job.getStatus().json());
+        } catch (ResponseStatusException ex) {
+            log.warn("AI analysis of '{}' rejected: {}", uuid, ex.getReason());
+            flash.addFlashAttribute("flash", toastMap("error", ex.getReason()));
+        }
         return REDIRECT_INDEX;
     }
 

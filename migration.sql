@@ -50,3 +50,15 @@ CREATE TABLE IF NOT EXISTS app_system_settings (
     updated_at timestamp NOT NULL,
     updated_by_username varchar(128)
 );
+-- version allure-ai
+-- Runtime overrides of the AI-analysis settings on the singleton settings row. All columns are
+-- nullable: NULL means "not set in the admin panel", and the effective value then comes from the
+-- allure-ai.* configuration. Idempotent so it coexists with ddl-auto:update.
+ALTER TABLE app_system_settings ADD COLUMN IF NOT EXISTS ai_enabled boolean;
+ALTER TABLE app_system_settings ADD COLUMN IF NOT EXISTS ai_opencode_url varchar(512);
+ALTER TABLE app_system_settings ADD COLUMN IF NOT EXISTS ai_provider varchar(64);
+ALTER TABLE app_system_settings ADD COLUMN IF NOT EXISTS ai_model varchar(64);
+ALTER TABLE app_system_settings ADD COLUMN IF NOT EXISTS ai_agent varchar(64);
+ALTER TABLE app_system_settings ADD COLUMN IF NOT EXISTS ai_parallel int;
+ALTER TABLE app_system_settings ADD COLUMN IF NOT EXISTS ai_timeout_seconds bigint;
+ALTER TABLE app_system_settings ADD COLUMN IF NOT EXISTS ai_auto boolean;

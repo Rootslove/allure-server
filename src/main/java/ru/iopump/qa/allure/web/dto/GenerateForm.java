@@ -29,6 +29,7 @@ import java.util.List;
  * @param reportUrl     optional {@code ExecutorInfo#reportUrl}
  * @param reportName    optional {@code ExecutorInfo#reportName}
  * @param deleteResults whether to delete source results after successful generation
+ * @param aiAnalysis    whether to add the AI Analysis tab; null when the checkbox is unchecked
  */
 public record GenerateForm(
     @NotEmpty(message = "select at least one result")
@@ -47,6 +48,8 @@ public record GenerateForm(
     @Nullable String reportUrl,
     @Nullable String reportName,
 
-    boolean deleteResults
+    boolean deleteResults,
+
+    @Nullable Boolean aiAnalysis
 ) {
 }
